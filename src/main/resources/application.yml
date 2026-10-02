@@ -1,0 +1,24 @@
+monitor:
+  sqs:
+    # Set via environment variable MONITOR_SQS_QUEUE_URL, or edit here.
+    queue-url: ${MONITOR_SQS_QUEUE_URL:https://sqs.us-west-2.amazonaws.com/060703039313/sfn-status-events}
+    region: ${AWS_REGION:us-west-2}
+    wait-time-seconds: 20        # long polling
+    max-messages: 10             # batch size per receive
+    visibility-timeout-seconds: 60
+    credential-error-backoff-seconds: 60
+    enabled: true
+
+spring:
+  datasource:
+    # File-based H2 so run history survives restarts on the laptop.
+    url: jdbc:h2:file:./data/monitor;MODE=PostgreSQL;AUTO_SERVER=TRUE
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
+
+logging:
+  level:
+    com.hca.monitor: INFO
