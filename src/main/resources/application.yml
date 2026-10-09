@@ -9,6 +9,22 @@ monitor:
     credential-error-backoff-seconds: 60
     enabled: true
 
+  informatica:
+    # Turn on once the JDBC URL and a read-only account are filled in.
+    enabled: ${INFA_REPO_ENABLED:false}
+    # Oracle:     jdbc:oracle:thin:@//dbhost:1521/SERVICE_NAME
+    # SQL Server: jdbc:sqlserver://dbhost:1433;databaseName=INFA_REPO;encrypt=true;trustServerCertificate=true
+    jdbc-url: ${INFA_REPO_JDBC_URL:}
+    # Credentials come from environment variables; never commit them.
+    username: ${INFA_REPO_USER:}
+    password: ${INFA_REPO_PASSWORD:}
+    repo-schema: ${INFA_REPO_SCHEMA:}      # schema owning the MX views; blank = login's default
+    server-time-zone: America/Los_Angeles  # Informatica server's local time zone
+    lookback-hours: 24
+    poll-interval-ms: 60000
+    query-timeout-seconds: 30
+    folders: []                            # e.g. [LOANS, FINANCE]; empty = all folders
+
 spring:
   datasource:
     # File-based H2 so run history survives restarts on the laptop.

@@ -32,8 +32,12 @@ public class SqsStatusConsumer implements SmartLifecycle {
 
     private static final Set<String> CREDENTIAL_ERROR_CODES = Set.of(
             "ExpiredToken", "ExpiredTokenException", "UnrecognizedClientException",
-            "InvalidClientTokenId", "InvalidSignatureException", "AccessDenied",
-            "AccessDeniedException", "AWS.SimpleQueueService.NonExistentQueue");
+            "InvalidClientTokenId", "InvalidSignatureException");
+
+    /** Wrong queue URL / region / account, or missing permissions. Not fixed by logging in again. */
+    private static final Set<String> CONFIG_ERROR_CODES = Set.of(
+            "AccessDenied", "AccessDeniedException", "AWS.SimpleQueueService.NonExistentQueue",
+            "QueueDoesNotExist");
 
     private final SqsClient sqs;
     private final SqsCollectorProperties props;
@@ -63,7 +67,8 @@ public class SqsStatusConsumer implements SmartLifecycle {
             return;
         }
         running = true;
-        worker = Thread.ofVirtual().name("sqs-status-consumer").start(this::loop);
+        // Non-daemon platform thread: keeps the JVM alive (there is no web server holding it open).
+        worker = Thread.ofPlatform().name("sqs-status-consumer").daemon(false).start(this::loop);
         log.info("SQS status consumer started on {}", props.queueUrl());
     }
 
@@ -91,8 +96,12 @@ public class SqsStatusConsumer implements SmartLifecycle {
                 handleFailure("AWS client error (credentials or network): " + e.getMessage(), true);
             } catch (AwsServiceException e) {
                 String code = e.awsErrorDetails() != null ? e.awsErrorDetails().errorCode() : "unknown";
-                boolean credential = CREDENTIAL_ERROR_CODES.contains(code);
-                handleFailure("SQS error " + code + ": " + e.getMessage(), credential);
+                if (CONFIG_ERROR_CODES.contains(code)) {
+                    handleConfigError("SQS error " + code + ": " + e.getMessage());
+                } else {
+                    handleFailure("SQS error " + code + ": " + e.getMessage(),
+                            CREDENTIAL_ERROR_CODES.contains(code));
+                }
             } catch (Exception e) {
                 if (!running) break;
                 handleFailure("Unexpected error: " + e, false);
@@ -167,6 +176,17 @@ public class SqsStatusConsumer implements SmartLifecycle {
             inCredentialFailure = false;
         }
         lastError = null;
+    }
+
+    private void handleConfigError(String message) {
+        if (!message.equals(lastError)) {
+            log.error("COLLECTOR_CONFIG_ERROR: {}. Check monitor.sqs.queue-url, AWS_REGION, and that the "
+                    + "credentials belong to the queue's account and allow sqs:ReceiveMessage. Retrying every {}s.",
+                    message, props.credentialErrorBackoffSeconds());
+        }
+        lastError = message;
+        inCredentialFailure = true; // so recovery is logged
+        sleep(Duration.ofSeconds(props.credentialErrorBackoffSeconds()));
     }
 
     private void handleFailure(String message, boolean credentialProblem) {

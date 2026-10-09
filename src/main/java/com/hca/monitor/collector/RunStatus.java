@@ -19,10 +19,12 @@ public record RunStatus(
         Instant observedAt) {
 
     public enum Status {
-        RUNNING, SUCCEEDED, FAILED, TIMED_OUT, ABORTED, PENDING_REDRIVE;
+        RUNNING, SUCCEEDED, FAILED, TIMED_OUT, ABORTED, PENDING_REDRIVE,
+        /** Informatica "Suspended": stopped on error, waiting for recovery. Needs attention. */
+        SUSPENDED;
 
         public boolean isTerminal() {
-            return this != RUNNING && this != PENDING_REDRIVE;
+            return this != RUNNING && this != PENDING_REDRIVE && this != SUSPENDED;
         }
     }
 }

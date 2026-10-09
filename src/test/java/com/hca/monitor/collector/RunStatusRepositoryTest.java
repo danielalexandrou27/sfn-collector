@@ -43,6 +43,13 @@ class RunStatusRepositoryTest {
     }
 
     @Test
+    void repeatedIdenticalRowIsUnchanged() {
+        repository.upsert(ev("RUNNING", "null"));
+        assertThat(repository.upsert(ev("RUNNING", "null")))
+                .isEqualTo(RunStatusRepository.Outcome.UNCHANGED);
+    }
+
+    @Test
     void redriveMovesFailedRunForward() {
         RunStatus failed = ev("FAILED", "1759175000000");
         repository.upsert(failed);

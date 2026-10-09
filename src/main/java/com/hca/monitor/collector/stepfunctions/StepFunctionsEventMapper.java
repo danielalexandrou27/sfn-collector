@@ -3,6 +3,7 @@ package com.hca.monitor.collector.stepfunctions;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hca.monitor.collector.RunStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -20,6 +21,7 @@ public class StepFunctionsEventMapper {
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
+    @Autowired
     public StepFunctionsEventMapper(ObjectMapper objectMapper) {
         this(objectMapper, Clock.systemUTC());
     }
