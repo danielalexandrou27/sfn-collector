@@ -79,6 +79,13 @@ public class RunStatusRepository {
         return !current.isTerminal() || incoming.status().isTerminal();
     }
 
+    /** Records which step/task failed; fills error_cause only if the run-level message was empty. */
+    public void setFailedStep(String runId, String failedStep, String cause) {
+        jdbc.update("""
+                UPDATE run_status SET failed_step = ?, error_cause = COALESCE(error_cause, ?)
+                WHERE run_id = ?""", failedStep, cause, runId);
+    }
+
     public Optional<String> findStatus(String runId) {
         return jdbc.query("SELECT status FROM run_status WHERE run_id = ?",
                 (rs, n) -> rs.getString(1), runId).stream().findFirst();

@@ -43,8 +43,13 @@ FROM run_status ORDER BY observed_at DESC;
 
 ## Informatica (PowerCenter) collector
 
-Polls `REP_WFLOW_RUN` in the PowerCenter repository every 60 s (read-only) and writes each
-workflow run into the same `run_status` table, with `source = 'INFORMATICA'`.
+Polls the PowerCenter repository tables every 60 s (read-only) and writes each workflow run
+into the same `run_status` table, with `source = 'INFORMATICA'`.
+
+| Tables | Used for |
+| --- | --- |
+| `OPB_WFLOW_RUN` + `OPB_SUBJECT` | Workflow runs and folder names (every poll) |
+| `OPB_TASK_INST_RUN` + `OPB_OBJECT_TYPE` + `OPB_SESS_TASK_LOG` | Task detail when a workflow fails, aborts or suspends: which session failed, its first error, source/target row counts. Stored in `infa_task_run`; the failed task name goes into `run_status.failed_step` |
 
 Add these to the IntelliJ run configuration's environment variables:
 
@@ -53,7 +58,7 @@ INFA_REPO_ENABLED=true
 INFA_REPO_JDBC_URL=jdbc:oracle:thin:@//dbhost:1521/SERVICE      (or the SQL Server form in application.yml)
 INFA_REPO_USER=<read-only user>
 INFA_REPO_PASSWORD=<password>
-INFA_REPO_SCHEMA=<schema owning the MX views, if not the user's default>
+INFA_REPO_SCHEMA=INFA_REPO_PRD
 ```
 
 Expected log lines:

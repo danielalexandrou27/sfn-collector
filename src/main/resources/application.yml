@@ -18,7 +18,7 @@ monitor:
     # Credentials come from environment variables; never commit them.
     username: ${INFA_REPO_USER:}
     password: ${INFA_REPO_PASSWORD:}
-    repo-schema: ${INFA_REPO_SCHEMA:}      # schema owning the MX views; blank = login's default
+    repo-schema: ${INFA_REPO_SCHEMA:}      # schema owning the OPB_ tables, e.g. INFA_REPO_PRD
     server-time-zone: America/Los_Angeles  # Informatica server's local time zone
     lookback-hours: 24
     poll-interval-ms: 60000

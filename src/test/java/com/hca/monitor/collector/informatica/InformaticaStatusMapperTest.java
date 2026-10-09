@@ -15,7 +15,7 @@ class InformaticaStatusMapperTest {
     private static final Instant NOW = Instant.parse("2026-10-09T17:00:00Z");
 
     private static InformaticaStatusMapper.Row row(int code, LocalDateTime end, String errCode, String errMsg) {
-        return new InformaticaStatusMapper.Row("LOANS", "wf_LOANS_EXTRACT", 12345L,
+        return new InformaticaStatusMapper.Row("LOANS", "wf_LOANS_EXTRACT", 777L, 12345L,
                 LocalDateTime.of(2026, 10, 9, 2, 0), end, code, errCode, errMsg);
     }
 

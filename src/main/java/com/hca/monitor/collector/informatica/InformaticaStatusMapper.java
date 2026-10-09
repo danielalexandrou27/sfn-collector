@@ -15,10 +15,11 @@ public final class InformaticaStatusMapper {
 
     private InformaticaStatusMapper() {}
 
-    /** One row of REP_WFLOW_RUN. Times are in the Informatica server's local time. */
+    /** One row of OPB_WFLOW_RUN (joined to OPB_SUBJECT). Times are in the Informatica server's local time. */
     public record Row(
             String folder,
             String workflowName,
+            long workflowId,
             long workflowRunId,
             LocalDateTime startTime,
             LocalDateTime endTime,
@@ -34,6 +35,17 @@ public final class InformaticaStatusMapper {
      *
      * @return empty for codes that do not describe an actual run (disabled, waiting, scheduled...).
      */
+    /** Status name for display/storage, including codes that have no RunStatus equivalent. */
+    public static String statusName(int code) {
+        return status(code).map(Enum::name).orElse(switch (code) {
+            case 2 -> "DISABLED";
+            case 11 -> "WAITING";
+            case 12 -> "SCHEDULED";
+            case 13 -> "UNSCHEDULED";
+            default -> "CODE_" + code;
+        });
+    }
+
     public static Optional<RunStatus.Status> status(int code) {
         return Optional.ofNullable(switch (code) {
             case 1 -> RunStatus.Status.SUCCEEDED;
