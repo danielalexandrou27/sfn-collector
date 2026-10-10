@@ -38,5 +38,34 @@ CREATE TABLE IF NOT EXISTS infa_task_run (
     PRIMARY KEY (run_id, instance_id, worklet_run_id)
 );
 
+-- How each downstream run relates to its upstream runs (one row per configured edge).
+CREATE TABLE IF NOT EXISTS run_link (
+    pipeline           VARCHAR(256) NOT NULL,
+    downstream_node    VARCHAR(256) NOT NULL,
+    downstream_run_id  VARCHAR(512) NOT NULL,
+    upstream_node      VARCHAR(256) NOT NULL,
+    upstream_run_id    VARCHAR(512),                 -- null when no upstream run was found
+    state              VARCHAR(32)  NOT NULL,        -- OK | UPSTREAM_STILL_RUNNING | UPSTREAM_FAILED | NO_UPSTREAM_RUN
+    lag_seconds        BIGINT,                       -- upstream end -> downstream start, when OK
+    downstream_start   TIMESTAMP WITH TIME ZONE NOT NULL,
+    alerted            BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at         TIMESTAMP WITH TIME ZONE NOT NULL,
+    PRIMARY KEY (downstream_run_id, pipeline, upstream_node)
+);
+
+-- Dependency problems, raised once each (dedup on type + pipeline + node + run).
+CREATE TABLE IF NOT EXISTS pipeline_alert (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    alert_type  VARCHAR(64)   NOT NULL,   -- UPSTREAM_FAILED | MISSING_TRIGGER | RAN_ON_...
+    pipeline    VARCHAR(256)  NOT NULL,
+    node_id     VARCHAR(256)  NOT NULL,
+    run_id      VARCHAR(512)  NOT NULL,
+    detail      VARCHAR(2000),
+    created_at  TIMESTAMP WITH TIME ZONE NOT NULL,
+    acknowledged BOOLEAN      NOT NULL DEFAULT FALSE,
+    CONSTRAINT uq_pipeline_alert UNIQUE (alert_type, pipeline, node_id, run_id)
+);
+
 CREATE INDEX IF NOT EXISTS ix_run_status_job ON run_status (job_id, started_at);
+CREATE INDEX IF NOT EXISTS ix_run_status_name ON run_status (source, job_name, started_at);
 CREATE INDEX IF NOT EXISTS ix_run_status_status ON run_status (status);

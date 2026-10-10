@@ -2,6 +2,8 @@ package com.hca.monitor.collector.informatica;
 
 import com.hca.monitor.collector.RunStatus;
 import com.hca.monitor.collector.RunStatusRepository;
+import com.hca.monitor.pipeline.RunChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.slf4j.Logger;
@@ -59,12 +61,16 @@ public class InformaticaRepositoryPoller implements DisposableBean {
     private final String taskSql;
 
     private volatile boolean failing;
+    private volatile boolean backfillDone;
+
+    private final ApplicationEventPublisher events;
 
     public InformaticaRepositoryPoller(InformaticaProperties props, RunStatusRepository repository,
-                                       TaskRunStore taskStore) {
+                                       TaskRunStore taskStore, ApplicationEventPublisher events) {
         this.props = props;
         this.repository = repository;
         this.taskStore = taskStore;
+        this.events = events;
         this.serverZone = ZoneId.of(props.serverTimeZone());
         String p = schemaPrefix(props.repoSchema());
         this.workflowSql = buildWorkflowSql(p, props.folders() == null ? 0 : props.folders().size());
@@ -130,7 +136,14 @@ public class InformaticaRepositoryPoller implements DisposableBean {
     @Scheduled(fixedDelayString = "${monitor.informatica.poll-interval-ms:60000}", initialDelay = 5_000)
     public void poll() {
         Instant observedAt = Instant.now();
-        LocalDateTime since = LocalDateTime.now(serverZone).minusHours(props.lookbackHours());
+        boolean backfill = !backfillDone && props.backfillDays() > 0;
+        LocalDateTime since = backfill
+                ? LocalDateTime.now(serverZone).minusDays(props.backfillDays())
+                : LocalDateTime.now(serverZone).minusHours(props.lookbackHours());
+        if (backfill) {
+            log.info("INFORMATICA_BACKFILL: first poll reads {} days of workflow runs; this may take a minute",
+                    props.backfillDays());
+        }
 
         try (Connection conn = dataSource.getConnection()) {
             List<InformaticaStatusMapper.Row> rows = readWorkflowRuns(conn, since);
@@ -150,6 +163,7 @@ public class InformaticaRepositoryPoller implements DisposableBean {
 
                 boolean changed = o == RunStatusRepository.Outcome.INSERTED || o == RunStatusRepository.Outcome.UPDATED;
                 if (!changed) continue;
+                if (backfill) continue;   // history: store only; no per-run logging, drill-down or alerts
 
                 log.info("{} {} run {} -> {}{}", o, r.jobId(), r.runName(), r.status(),
                         r.errorCode() != null ? " (" + r.errorCode() + ": " + firstLine(r.errorCause()) + ")" : "");
@@ -157,8 +171,13 @@ public class InformaticaRepositoryPoller implements DisposableBean {
                 if (DRILL_DOWN.contains(r.status())) {
                     drillDown(conn, row, r, observedAt);
                 }
+                events.publishEvent(new RunChangedEvent(r, o == RunStatusRepository.Outcome.INSERTED));
             }
             log.debug("Informatica poll: {} rows, outcomes {}", rows.size(), counts);
+            if (backfill) {
+                backfillDone = true;
+                log.info("INFORMATICA_BACKFILL_DONE: {} workflow runs read, outcomes {}", rows.size(), counts);
+            }
 
         } catch (Exception e) {
             if (!failing) {

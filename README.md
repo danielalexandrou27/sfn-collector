@@ -86,6 +86,51 @@ SELECT source, job_name, run_name, status, started_at, stopped_at, error_code
 FROM run_status ORDER BY started_at DESC;
 ```
 
+## Pipelines: linking workflows to state machines
+
+`config/pipelines.yml` declares which Informatica workflows feed which state machines
+(see `config/pipelines.example.yml`). The engine reloads it within 30 s of saving; an invalid
+edit is rejected with every problem listed and the previous version stays active.
+
+What the engine does with it:
+
+| When | Check | Result |
+| --- | --- | --- |
+| A state machine starts | Did each upstream workflow finish successfully before it? | `run_link` row: OK (with lag), UPSTREAM_STILL_RUNNING, UPSTREAM_FAILED or NO_UPSTREAM_RUN. Non-OK is re-checked after 3 min, then raised as `RAN_ON_...` |
+| A workflow or state machine fails | What is downstream of it? | `UPSTREAM_FAILED` alert listing every blocked node |
+| Every 5 min | Upstream succeeded more than `max_start_lag_minutes` ago, downstream never started | `MISSING_TRIGGER` alert |
+
+Alerts are logged as `PIPELINE_ALERT` and stored once each in `pipeline_alert`.
+
+### Drafting the registry from history (edge discovery)
+
+Writing 500 entries by hand isn't practical. The engine drafts them from timing:
+
+1. Load history once. In the run configuration set `SFN_BACKFILL_ENABLED=true` and
+   `INFA_BACKFILL_DAYS=30`, start the app and wait for `SFN_BACKFILL_DONE` and
+   `INFORMATICA_BACKFILL_DONE` (paced at 2 ListExecutions calls/s: roughly 5–10 min for 500
+   state machines). Then remove both variables.
+2. About 10 minutes after startup (and every 6 h), the engine writes `data/edge-candidates.yml`:
+   one block per state machine with the workflows that consistently finish shortly before it,
+   the evidence for each, and a suggested `max_start_lag_minutes`.
+3. Review it and copy the blocks you agree with into `config/pipelines.yml`. Confirmed edges
+   drop out of the next draft.
+
+Both sides must come from the same environment: discovery between prod Informatica and dev
+Step Functions finds nothing meaningful.
+
+Useful queries:
+
+```sql
+-- Open dependency alerts
+SELECT created_at, alert_type, pipeline, node_id, detail FROM pipeline_alert
+WHERE acknowledged = FALSE ORDER BY created_at DESC;
+
+-- How each state machine run related to its upstream
+SELECT l.pipeline, l.downstream_node, l.upstream_node, l.state, l.lag_seconds / 60 AS lag_min, l.downstream_start
+FROM run_link l ORDER BY l.downstream_start DESC;
+```
+
 ## Moving to EC2 later
 
 No code change. Don't set `AWS_PROFILE`; the default credential chain picks up the

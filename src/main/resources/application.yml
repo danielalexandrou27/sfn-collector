@@ -21,9 +21,30 @@ monitor:
     repo-schema: ${INFA_REPO_SCHEMA:}      # schema owning the OPB_ tables, e.g. INFA_REPO_PRD
     server-time-zone: America/Los_Angeles  # Informatica server's local time zone
     lookback-hours: 24
+    # One-time history load on the first poll after startup, for edge discovery. Set to 0 afterwards.
+    backfill-days: ${INFA_BACKFILL_DAYS:0}
     poll-interval-ms: 60000
     query-timeout-seconds: 30
     folders: []                            # e.g. [LOANS, FINANCE]; empty = all folders
+
+  # One-time load of past Step Functions executions (ListExecutions), for edge discovery.
+  sfn-backfill:
+    enabled: ${SFN_BACKFILL_ENABLED:false}
+    days: 30
+    name-prefix: ""            # only state machines whose name starts with this; "" = all
+    calls-per-second: 2        # well under the shared ListExecutions quota (5/s)
+
+  pipelines:
+    file: ${PIPELINES_FILE:./config/pipelines.yml}
+    link-window-hours: 36      # how far back to look for an upstream run
+    pending-grace-minutes: 3   # wait before alerting on a non-OK link (Informatica polls every 60 s)
+    discovery:
+      output: ./data/edge-candidates.yml
+      history-days: 30
+      window-minutes: 120      # upstream must finish within this long before the state machine starts
+      min-days: 3
+      min-support: 0.8         # on >= 80% of the days the state machine ran
+      min-precision: 0.5       # >= 50% of the workflow's runs were followed by the state machine
 
 spring:
   datasource:

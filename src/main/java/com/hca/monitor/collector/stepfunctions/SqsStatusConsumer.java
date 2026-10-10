@@ -2,6 +2,8 @@ package com.hca.monitor.collector.stepfunctions;
 
 import com.hca.monitor.collector.RunStatus;
 import com.hca.monitor.collector.RunStatusRepository;
+import com.hca.monitor.pipeline.RunChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
@@ -52,12 +54,15 @@ public class SqsStatusConsumer implements SmartLifecycle {
     private volatile String lastError;
     private boolean inCredentialFailure;
 
-    public SqsStatusConsumer(SqsClient sqs, SqsCollectorProperties props,
-                             StepFunctionsEventMapper mapper, RunStatusRepository repository) {
+    private final ApplicationEventPublisher events;
+
+    public SqsStatusConsumer(SqsClient sqs, SqsCollectorProperties props, StepFunctionsEventMapper mapper,
+                             RunStatusRepository repository, ApplicationEventPublisher events) {
         this.sqs = sqs;
         this.props = props;
         this.mapper = mapper;
         this.repository = repository;
+        this.events = events;
     }
 
     @Override
@@ -161,6 +166,9 @@ public class SqsStatusConsumer implements SmartLifecycle {
             RunStatusRepository.Outcome outcome = repository.upsert(r);
             log.info("{} {} {} -> {}{}", outcome, r.jobName(), r.runName(), r.status(),
                     r.errorCode() != null ? " (" + r.errorCode() + ")" : "");
+            if (outcome == RunStatusRepository.Outcome.INSERTED || outcome == RunStatusRepository.Outcome.UPDATED) {
+                events.publishEvent(new RunChangedEvent(r, outcome == RunStatusRepository.Outcome.INSERTED));
+            }
             return true;
         } catch (Exception e) {
             // DB problem: keep the message; it becomes visible again and is retried.

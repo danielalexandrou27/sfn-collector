@@ -48,6 +48,15 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sqs</artifactId>
         </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sfn</artifactId>
+        </dependency>
+        <!-- pipelines.yml registry -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
         <!-- Required for SSO profiles (laptop). Without these the SDK cannot load SSO credentials. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>

@@ -15,6 +15,8 @@ public record InformaticaProperties(
         /** Time zone of the Informatica server; START_TIME/END_TIME are stored in its local time. */
         String serverTimeZone,
         int lookbackHours,
+        /** First poll after startup reads this many days instead of lookbackHours (0 = off). */
+        int backfillDays,
         long pollIntervalMs,
         int queryTimeoutSeconds,
         /** Optional: only these folders (SUBJECT_AREA). Empty = all folders. */
