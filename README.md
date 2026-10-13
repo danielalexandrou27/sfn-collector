@@ -86,6 +86,28 @@ SELECT source, job_name, run_name, status, started_at, stopped_at, error_code
 FROM run_status ORDER BY started_at DESC;
 ```
 
+## Step Functions error details
+
+The FAILED event from SQS carries only the execution's top-level `error`/`cause`, often just
+`States.TaskFailed` or a custom error from a Fail state. When an execution fails or times out, the
+engine reads its execution history (`states:GetExecutionHistory`) on a background thread and
+records the real root cause in `run_failure_detail`:
+
+- **failed state**: the state that actually failed, even behind a Catch -> notify -> Fail chain
+- **attempts**: how many times that state failed (Retry count + 1)
+- **service error**: parsed from the task's cause. Glue gives job name, job run id and
+  `ErrorMessage`; Lambda gives `errorType` and `errorMessage`; other services give their message field
+- **summary**: one line, e.g. `glue hca_loans_load_job: AnalysisException: Table or view not found: stg.loans_daily`
+
+Failures that recovered on retry are ignored. The failed state is also written to
+`run_status.failed_step`. Log line: `FAILURE_DETAIL <machine> <execution>: state '<name>' -> <summary>`.
+
+```sql
+SELECT s.job_name, s.run_name, s.stopped_at, d.failed_state, d.attempts, d.summary
+FROM run_status s JOIN run_failure_detail d ON d.run_id = s.run_id
+ORDER BY s.stopped_at DESC;
+```
+
 ## Pipelines: linking workflows to state machines
 
 `config/pipelines.yml` declares which Informatica workflows feed which state machines

@@ -25,6 +25,11 @@ monitor:
     query-timeout-seconds: 30
     folders: []                            # e.g. [LOANS, FINANCE]; empty = all folders
 
+  # On FAILED / TIMED_OUT, read the execution history to find the failed state and service error.
+  sfn-enricher:
+    enabled: true
+    max-history-events: 1000
+
   pipelines:
     file: ${PIPELINES_FILE:./config/pipelines.yml}
     link-window-hours: 36      # how far back to look for an upstream run

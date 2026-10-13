@@ -38,6 +38,26 @@ CREATE TABLE IF NOT EXISTS infa_task_run (
     PRIMARY KEY (run_id, instance_id, worklet_run_id)
 );
 
+-- Root cause of a failed / timed-out Step Functions execution, from its execution history.
+CREATE TABLE IF NOT EXISTS run_failure_detail (
+    run_id          VARCHAR(512) PRIMARY KEY,   -- run_status.run_id (execution ARN)
+    failed_state    VARCHAR(256),               -- state that failed, e.g. "Load Loans"
+    failure_event   VARCHAR(64),                -- TaskFailed, TaskTimedOut, ExecutionFailed, ...
+    service         VARCHAR(64),                -- glue, lambda, ecs, batch, ...
+    resource        VARCHAR(256),               -- e.g. startJobRun.sync
+    service_job     VARCHAR(256),               -- Glue job name, when available
+    service_run_id  VARCHAR(256),               -- Glue job run id / Lambda request id
+    error           VARCHAR(512),               -- e.g. States.TaskFailed, Lambda.Unknown
+    error_type      VARCHAR(256),               -- e.g. Lambda errorType
+    message         VARCHAR(4000),              -- readable error from the service
+    summary         VARCHAR(512),               -- one line: "glue job_x: AnalysisException: ..."
+    attempts        INT,                        -- failures of that state (retries + 1)
+    execution_error VARCHAR(512),               -- top-level ExecutionFailed error
+    execution_cause VARCHAR(4000),
+    task_cause      VARCHAR(8000),              -- raw cause from the task, for the LLM
+    analysed_at     TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
 -- How each downstream run relates to its upstream runs (one row per configured edge).
 CREATE TABLE IF NOT EXISTS run_link (
     pipeline           VARCHAR(256) NOT NULL,

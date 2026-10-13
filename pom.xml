@@ -48,6 +48,11 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sqs</artifactId>
         </dependency>
+        <!-- GetExecutionHistory, for failure details -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sfn</artifactId>
+        </dependency>
         <!-- pipelines.yml registry -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
