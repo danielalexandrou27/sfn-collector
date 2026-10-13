@@ -4,7 +4,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.sfn.SfnClient;
 import software.amazon.awssdk.services.sqs.SqsClient;
 
 @Configuration
@@ -22,11 +21,4 @@ public class AwsConfig {
                 .build();
     }
 
-    @Bean(destroyMethod = "close")
-    public SfnClient sfnClient(SqsCollectorProperties props) {
-        return SfnClient.builder()
-                .region(Region.of(props.region()))
-                .credentialsProvider(DefaultCredentialsProvider.create())
-                .build();
-    }
 }

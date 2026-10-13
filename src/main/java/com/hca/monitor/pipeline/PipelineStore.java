@@ -100,19 +100,6 @@ public class PipelineStore {
         }
     }
 
-    /** Recent runs of both sources, for edge discovery. */
-    public List<EdgeDiscovery.Run> runsSince(Instant since) {
-        return jdbc.query("""
-                SELECT source, job_id, job_name, status, started_at, stopped_at FROM run_status
-                WHERE started_at >= ?""",
-                (rs, n) -> new EdgeDiscovery.Run(
-                        rs.getString(1),
-                        PipelineGraph.SFN.equals(rs.getString(1)) ? rs.getString(3) : rs.getString(2),
-                        rs.getString(4),
-                        instant(rs.getObject(5, OffsetDateTime.class)),
-                        instant(rs.getObject(6, OffsetDateTime.class))),
-                ts(since));
-    }
 
     private static Instant instant(OffsetDateTime o) { return o == null ? null : o.toInstant(); }
 

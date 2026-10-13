@@ -102,22 +102,9 @@ What the engine does with it:
 
 Alerts are logged as `PIPELINE_ALERT` and stored once each in `pipeline_alert`.
 
-### Drafting the registry from history (edge discovery)
+### Maintaining the registry
 
-Writing 500 entries by hand isn't practical. The engine drafts them from timing:
-
-1. Load history once. In the run configuration set `SFN_BACKFILL_ENABLED=true` and
-   `INFA_BACKFILL_DAYS=30`, start the app and wait for `SFN_BACKFILL_DONE` and
-   `INFORMATICA_BACKFILL_DONE` (paced at 2 ListExecutions calls/s: roughly 5–10 min for 500
-   state machines). Then remove both variables.
-2. About 10 minutes after startup (and every 6 h), the engine writes `data/edge-candidates.yml`:
-   one block per state machine with the workflows that consistently finish shortly before it,
-   the evidence for each, and a suggested `max_start_lag_minutes`.
-3. Review it and copy the blocks you agree with into `config/pipelines.yml`. Confirmed edges
-   drop out of the next draft.
-
-Both sides must come from the same environment: discovery between prod Informatica and dev
-Step Functions finds nothing meaningful.
+Links are entered by hand in `config/pipelines.yml`; the engine only acts on links listed there.
 
 Useful queries:
 

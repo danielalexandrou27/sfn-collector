@@ -79,24 +79,6 @@ public class RunStatusRepository {
         return !current.isTerminal() || incoming.status().isTerminal();
     }
 
-    /**
-     * Insert-only (used by backfills). Never overwrites a row that already exists, so richer data
-     * from live events (error codes, failed step) is preserved.
-     */
-    public boolean insertIfAbsent(RunStatus r) {
-        try {
-            jdbc.update("""
-                    INSERT INTO run_status (run_id, source, job_id, job_name, run_name, status,
-                        started_at, stopped_at, error_code, error_cause, redrive_count, event_time, observed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    r.runId(), r.source(), r.jobId(), r.jobName(), r.runName(), r.status().name(),
-                    ts(r.startedAt()), ts(r.stoppedAt()), r.errorCode(), r.errorCause(),
-                    r.redriveCount(), ts(r.eventTime()), ts(r.observedAt()));
-            return true;
-        } catch (org.springframework.dao.DuplicateKeyException exists) {
-            return false;
-        }
-    }
 
     /** Records which step/task failed; fills error_cause only if the run-level message was empty. */
     public void setFailedStep(String runId, String failedStep, String cause) {

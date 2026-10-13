@@ -10,13 +10,11 @@ public record InformaticaProperties(
         String jdbcUrl,
         String username,
         String password,
-        /** Schema that owns the MX views, e.g. INFA_REPO. Blank = user's default schema. */
+        /** Schema that owns the OPB_ tables, e.g. INFA_REPO_PRD. Blank = user's default schema. */
         String repoSchema,
         /** Time zone of the Informatica server; START_TIME/END_TIME are stored in its local time. */
         String serverTimeZone,
         int lookbackHours,
-        /** First poll after startup reads this many days instead of lookbackHours (0 = off). */
-        int backfillDays,
         long pollIntervalMs,
         int queryTimeoutSeconds,
         /** Optional: only these folders (SUBJECT_AREA). Empty = all folders. */

@@ -48,7 +48,7 @@ public class PipelineRegistry {
                 if (!missingLogged) {
                     missingLogged = true;
                     log.info("No pipeline registry at {} - dependency checks are off until it exists. "
-                            + "See config/pipelines.example.yml and data/edge-candidates.yml.", file.toAbsolutePath());
+                            + "See config/pipelines.example.yml.", file.toAbsolutePath());
                 }
                 loadedVersion = null;
                 graph = PipelineGraph.empty();
