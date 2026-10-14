@@ -13,11 +13,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PipelineLogicTest {
 
     static PipelineConfig.Node infa(String id, String folder, String wf) {
-        return new PipelineConfig.Node(id, new PipelineConfig.InformaticaRef(folder, wf), null, null, null);
+        return new PipelineConfig.Node(id, new PipelineConfig.InformaticaRef(folder, wf), null, null, null, null);
     }
 
     static PipelineConfig.Node sfn(String id, String name, Integer lag, String... deps) {
-        return new PipelineConfig.Node(id, null, name, List.of(deps), lag);
+        return new PipelineConfig.Node(id, null, name, List.of(deps), lag, null);
     }
 
     static PipelineGraph sampleGraph() {
@@ -48,7 +48,7 @@ class PipelineLogicTest {
                 sfn("a", "sm-a", null, "b"),
                 sfn("b", "sm-b", null, "a"),
                 sfn("c", "sm-c", null, "missing"),
-                new PipelineConfig.Node("d", null, null, null, null)))));
+                new PipelineConfig.Node("d", null, null, null, null, null)))));
         assertThatThrownBy(() -> PipelineGraph.build(bad))
                 .hasMessageContaining("cycle")
                 .hasMessageContaining("unknown node 'missing'")

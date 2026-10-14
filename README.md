@@ -212,3 +212,36 @@ No code change. Don't set `AWS_PROFILE`; the default credential chain picks up t
 - `PKIX path building failed`: import the company root CA into the JDK truststore
   (`keytool -importcert -cacerts -alias corp-root -file corp-root.cer`), and set
   `HTTPS_PROXY` / `-Dhttps.proxyHost` if a proxy is required.
+
+## Dashboard API (for the pipeline-dashboard web page)
+
+The engine serves a read-only API on port 8080 (`SERVER_PORT` to change). The web page itself is a
+separate project, `pipeline-dashboard`; see its README for running and hosting it.
+
+Set the shared sign-in before starting the engine (never commit these):
+
+```
+DASHBOARD_USER=pipeline
+DASHBOARD_PASSWORD=<shared team password>     # if blank, a random one is printed in the log at startup
+```
+
+| Endpoint | Returns |
+|---|---|
+| `POST /api/login` `{username, password}` | Signs in (session cookie, 8 h). 5 wrong tries locks that machine out for 5 min. |
+| `POST /api/logout` | Signs out. |
+| `GET /api/dashboard?date=YYYY-MM-DD` | One row per workflow → step function link for the batch day (default today, midnight Pacific), plus counts and unregistered step functions. |
+| `GET /api/attempts?type=STEP_FUNCTIONS&name=...&date=...` | Every run of one job that day, newest first. |
+| `GET /api/stream` | Server-sent events: `changed` whenever a run or incident changes (at most every 2 s), `heartbeat` every 25 s. |
+
+To flag a step function as **Late** when it hasn't run by a certain time, add `expected_by` (24-hour
+Pacific time) to its node in `pipelines.yml`:
+
+```yaml
+      - id: load
+        step_function: hca-loans-load
+        after: [extract, dims]
+        expected_by: "04:30"
+```
+
+Every call except login needs a signed-in session. The engine only reads its own database for these;
+nothing on the dashboard can change a run, an incident or the registry.

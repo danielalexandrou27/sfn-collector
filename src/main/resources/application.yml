@@ -84,7 +84,27 @@ monitor:
     link-window-hours: 36      # how far back to look for an upstream run
     pending-grace-minutes: 3   # wait before alerting on a non-OK link (Informatica polls every 60 s)
 
+  # Read-only API for the pipeline-dashboard web page (separate project). One shared sign-in.
+  dashboard:
+    username: ${DASHBOARD_USER:pipeline}
+    password: ${DASHBOARD_PASSWORD:}         # blank: a random password is generated and logged at startup
+    time-zone: America/Los_Angeles           # batch day runs midnight to midnight in this zone
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        name: PIPEMON
+        http-only: true
+        same-site: lax
+        secure: ${DASHBOARD_HTTPS:false}     # true once served over https
+
 spring:
+  mvc:
+    async:
+      request-timeout: 35m                   # live-update streams; the page reconnects after this
   datasource:
     # File-based H2 so run history survives restarts on the laptop.
     url: jdbc:h2:file:./data/monitor;MODE=PostgreSQL;AUTO_SERVER=TRUE

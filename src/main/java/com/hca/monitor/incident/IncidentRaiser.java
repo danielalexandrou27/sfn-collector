@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -42,6 +43,7 @@ public class IncidentRaiser implements DisposableBean {
 
     private final IncidentProperties props;
     private final IncidentStore store;
+    private final ApplicationEventPublisher events;
     private final Instant startedAt = Instant.now();
     private final ScheduledExecutorService thread = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "servicenow-incidents");
@@ -52,9 +54,10 @@ public class IncidentRaiser implements DisposableBean {
     private boolean resolveEnabled;
     private ServiceNowBrowser browser;
 
-    public IncidentRaiser(IncidentProperties props, IncidentStore store) {
+    public IncidentRaiser(IncidentProperties props, IncidentStore store, ApplicationEventPublisher events) {
         this.props = props;
         this.store = store;
+        this.events = events;
         this.mode = props.mode();
 
         List<String> unfilled = ServiceNowLinks.unfilled(props.fields());
@@ -82,16 +85,19 @@ public class IncidentRaiser implements DisposableBean {
 
     void cycle() {
         try {
-            raiseNew();
+            boolean changed = raiseNew();
             if (resolveEnabled) {
-                resolveRecovered();
+                changed |= resolveRecovered();
+            }
+            if (changed) {
+                events.publishEvent(new IncidentRecordedEvent(null, "CHANGED"));   // refresh open dashboards
             }
         } catch (Exception e) {
             log.error("Incident cycle failed: {}", e.toString());
         }
     }
 
-    private void raiseNew() {
+    private boolean raiseNew() {
         Instant since = startedAt.minus(Duration.ofMinutes(5));
         var candidates = store.candidates(props.statuses(), since, props.maxPerPoll());
         for (IncidentCandidate c : candidates) {
@@ -151,6 +157,7 @@ public class IncidentRaiser implements DisposableBean {
         if (candidates.size() >= props.maxPerPoll()) {
             log.warn("INCIDENT_THROTTLED: {} failures this minute (max-per-poll); the rest follow next minute", candidates.size());
         }
+        return !candidates.isEmpty();
     }
 
     /** True if ServiceNow shows the incident as Resolved/Closed/Canceled (e.g. closed by hand). */
@@ -164,10 +171,12 @@ public class IncidentRaiser implements DisposableBean {
         }
     }
 
-    private void resolveRecovered() {
+    private boolean resolveRecovered() {
+        boolean any = false;
         ZoneId zone = ZoneId.of(props.timeZone());
         DateTimeFormatter t = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z");
         for (var r : store.resolvable()) {
+            any = true;
             String resolution = "Resolved automatically by the pipeline monitoring engine: " + r.jobName() + " run "
                     + r.okRunName() + " succeeded" + (r.okEndedAt() != null ? " at " + t.format(r.okEndedAt().atZone(zone)) : "") + ".";
             Map<String, String> fields = new LinkedHashMap<>();
@@ -182,6 +191,7 @@ public class IncidentRaiser implements DisposableBean {
                         IncidentStore.MAX_ATTEMPTS, e.getMessage());
             }
         }
+        return any;
     }
 
     private Path writeOutbox(IncidentCandidate c, Map<String, String> fields, String link) {

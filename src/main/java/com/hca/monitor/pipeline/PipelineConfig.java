@@ -20,7 +20,9 @@ public final class PipelineConfig {
             InformaticaRef informatica,
             String stepFunction,
             List<String> dependsOn,
-            Integer maxStartLagMinutes) {}
+            Integer maxStartLagMinutes,
+            /** Optional "HH:mm" (server time zone): the dashboard shows LATE if it hasn't started by then. */
+            String expectedBy) {}
 
     public record InformaticaRef(String folder, String workflow) {}
 }

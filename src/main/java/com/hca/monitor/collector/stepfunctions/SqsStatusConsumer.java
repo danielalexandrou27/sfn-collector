@@ -201,8 +201,8 @@ public class SqsStatusConsumer implements SmartLifecycle {
         lastError = message;
         if (credentialProblem) {
             if (!inCredentialFailure) {
-                log.error("COLLECTOR_CREDENTIALS_FAILED: {}. On the laptop run "
-                        + "'aws sso login --profile <your-profile>'. Retrying every {}s.",
+                log.error("COLLECTOR_CREDENTIALS_FAILED: {}. Refresh the keys in %USERPROFILE%\\.aws\\credentials "
+                        + "from the AWS access portal (Access keys -> Option 2), then restart if this repeats. Retrying every {}s.",
                         message, props.credentialErrorBackoffSeconds());
                 inCredentialFailure = true;
             }

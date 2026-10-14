@@ -33,6 +33,8 @@ public final class PipelineGraph {
 
     private final Map<String, List<NodeRef>> byJobKey = new HashMap<>();
     private final Map<String, NodeRef> byId = new HashMap<>();
+    private final List<NodeRef> nodes = new ArrayList<>();
+    private final Map<NodeRef, java.time.LocalTime> expectedBy = new HashMap<>();
     private final Map<NodeRef, List<Edge>> upstreamEdges = new HashMap<>();
     private final Map<NodeRef, List<Edge>> downstreamEdges = new HashMap<>();
     private final List<Edge> edges = new ArrayList<>();
@@ -84,6 +86,13 @@ public final class PipelineGraph {
                     ref = new NodeRef(pName, n.id(), SFN, sm);
                 }
                 refs.put(n.id(), ref);
+                if (n.expectedBy() != null && !n.expectedBy().isBlank()) {
+                    try {
+                        g.expectedBy.put(ref, java.time.LocalTime.parse(n.expectedBy().trim()));
+                    } catch (java.time.format.DateTimeParseException bad) {
+                        errors.add(where + ": expected_by must be HH:mm, got '" + n.expectedBy() + "'");
+                    }
+                }
             }
 
             Map<String, List<String>> deps = new HashMap<>();
@@ -108,6 +117,7 @@ public final class PipelineGraph {
             for (NodeRef r : refs.values()) {
                 g.byJobKey.computeIfAbsent(r.key(), k -> new ArrayList<>()).add(r);
                 g.byId.put(pName + "/" + r.nodeId(), r);
+                g.nodes.add(r);
             }
         }
 
@@ -160,6 +170,12 @@ public final class PipelineGraph {
         String value = SFN.equals(r.source()) ? r.jobName() : r.jobId();
         return byJobKey.getOrDefault(NodeRef.key(r.source(), value), List.of());
     }
+
+    /** Every node in file order. */
+    public List<NodeRef> nodes() { return nodes; }
+
+    /** expected_by for a node, or null. */
+    public java.time.LocalTime expectedBy(NodeRef n) { return expectedBy.get(n); }
 
     public java.util.Optional<NodeRef> node(String pipeline, String nodeId) {
         return java.util.Optional.ofNullable(byId.get(pipeline + "/" + nodeId));
