@@ -30,6 +30,55 @@ monitor:
     enabled: true
     max-history-events: 1000
 
+  # ServiceNow incidents without the API: a prefilled new-incident link, submitted in a browser.
+  incidents:
+    enabled: ${INCIDENTS_ENABLED:false}
+    mode: ${INCIDENTS_MODE:DRY_RUN}          # DRY_RUN = write the link to the outbox; BROWSER = open it and click Submit
+    instance-url: ${SERVICENOW_URL:https://<instance>.service-now.com}
+    statuses: [FAILED, TIMED_OUT, SUSPENDED] # add ABORTED to ticket manual stops too
+    wait-for-detail-minutes: 3
+    max-per-poll: 5
+    time-zone: America/Los_Angeles
+    aws-region: ${AWS_REGION:us-west-2}
+    outbox-dir: ./data/incident-outbox
+    closed-states: ["6", "7", "8"]           # Resolved, Closed, Canceled: a new failure gets a new incident
+    # Fixed fields: ServiceNow INTERNAL field name -> INTERNAL value (sys_ids for reference fields).
+    # Values from the incident list filter -> right-click breadcrumb -> Copy query (see README).
+    fields:
+      caller_id: "5badb313eb1d1e10f355fe7acad0cdb5"          # Daniel Alexandrou
+      category: "application"                                # Application
+      subcategory: "batch job"                               # Batch Job
+      cmdb_ci: "afec946a931252107335738efaba10ac"            # ADW
+      u_vendor_related: "no"                                 # Vendor Related = No
+      contact_type: "email"                                  # Channel = Email
+      assignment_group: "d7838333ebda1a10f355fe7acad0cda3"   # HCA EDW Application Support
+      assigned_to: "5badb313eb1d1e10f355fe7acad0cdb5"        # Daniel Alexandrou
+    # {{...}} placeholders: job, status_word, summary, detail, failed_step, attempts, run, started, ended,
+    # duration, downstream, link, source_label, folder, run_id
+    short-description-template: "{{job}} {{status_word}}"
+    description-template: |
+      {{summary}}
+
+      Failed step: {{failed_step}} (attempts: {{attempts}})
+      Run: {{run}}
+      Started: {{started}}
+      Ended: {{ended}}
+      Downstream impact: {{downstream}}
+      Link: {{link}}
+    browser:
+      channel: msedge                        # installed Edge: no browser download needed; or chrome / chromium
+      headless: false                        # keep false until the sign-in is saved in the profile
+      profile-dir: ./data/servicenow-browser-profile
+      screenshot-dir: ./data/incident-screenshots
+      login-wait-minutes: 5
+      timeout-seconds: 30
+    resolve:
+      enabled: false                         # turn on once the values below are confirmed
+      fields:
+        state: "6"                           # Resolved
+        close_code: "<resolution code value>"
+        close_notes: "{{resolution}}"
+
   pipelines:
     file: ${PIPELINES_FILE:./config/pipelines.yml}
     link-window-hours: 36      # how far back to look for an upstream run

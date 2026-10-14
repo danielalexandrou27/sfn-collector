@@ -65,11 +65,11 @@ Expected log lines:
 
 ```
 Informatica repository poller enabled: jdbc:... every 60000 ms
-INSERTED LOANS/wf_LOANS_EXTRACT run 12345 -> RUNNING
-UPDATED  LOANS/wf_LOANS_EXTRACT run 12345 -> SUCCEEDED
+Informatica wf_LOANS_EXTRACT [LOANS] run 12345: RUNNING | started 2026-10-13 02:00:05
+Informatica wf_LOANS_EXTRACT [LOANS] run 12345: SUCCEEDED | started 2026-10-13 02:00:05 | ended 02:31:40 (31m 35s)
 ```
 
-The first poll loads every run from the last 24 hours, so expect a burst of INSERTED lines.
+The first poll loads every run from the last 24 hours, so expect a burst of lines.
 Later polls log only changes.
 
 Status mapping (`RUN_STATUS_CODE`): 1 → SUCCEEDED, 3/15 → FAILED, 4/5 → ABORTED,
@@ -107,6 +107,65 @@ SELECT s.job_name, s.run_name, s.stopped_at, d.failed_state, d.attempts, d.summa
 FROM run_status s JOIN run_failure_detail d ON d.run_id = s.run_id
 ORDER BY s.stopped_at DESC;
 ```
+
+## ServiceNow incidents (prefilled link + one-click submit, no API)
+
+For each failed run (FAILED, TIMED_OUT, SUSPENDED) the engine builds a prefilled new-incident link:
+
+```
+https://<instance>.service-now.com/incident.do?sys_id=-1&sysparm_query=caller_id=...^category=...^short_description=<job> failed^description=<error>
+```
+
+- **DRY_RUN** (default): the link is logged (`INCIDENT_DRY_RUN`) and written to `data/incident-outbox/`. Open it, check the form, click Submit yourself.
+- **BROWSER**: the engine opens the link in Edge, signed in as you, checks that every field prefilled exactly as
+  configured (it will not submit otherwise), clicks Submit, and confirms the INC number exists (`INCIDENT_CREATED INC...`).
+  If anything goes wrong it saves a screenshot to `data/incident-screenshots/` and logs the link so you can raise it by hand.
+- **Auto-resolve** (`resolve.enabled`): when the same job later runs successfully, the engine opens the incident,
+  sets the resolve fields and clicks Resolve (`INCIDENT_RESOLVED`).
+- One open incident per job: a repeat failure while it is open is recorded against it (`INCIDENT_ALREADY_OPEN`).
+  Only failures that end after the engine starts are ticketed; at most 5 per minute.
+- Step Functions incidents wait up to 3 minutes for the failure detail so the description has the real error.
+
+### How duplicates are prevented
+
+| Layer | Rule |
+| --- | --- |
+| One row per run | `run_status` is keyed by run id (execution ARN / Informatica run), so repeated events never create a second failure |
+| One ticket per run | `sn_incident` is keyed by the same run id; only runs with no row are picked up |
+| One open ticket per job | a repeat failure while the job's INC is open is recorded as `DUPLICATE` against it |
+| Closed by hand | before recording a duplicate, the INC's state is checked in ServiceNow; if Resolved/Closed/Canceled (`closed-states`), a new INC is raised |
+| Submit clicked, then a later step failed | the INC number (assigned before Submit) is saved with the failed attempt; the retry checks that INC exists before submitting again |
+| No back-ticketing | only failures that end after the engine starts are ticketed |
+
+Keep the `data/` folder: it holds this history. Deleting it while failures are open can lead to repeat tickets.
+
+### One-time setup: get the internal field values
+
+Reference fields need sys_ids and choice fields need their internal values, not the labels.
+No developer tools needed:
+
+1. Open `https://<instance>.service-now.com/incident_list.do` and click the filter (funnel) icon.
+2. Add one "is" condition per field (Caller, Category, Subcategory, Configuration item, Vendor Related,
+   Channel, Assignment group, Assigned to) and click Run. It doesn't matter if nothing matches.
+3. Right-click the last item in the breadcrumb and choose **Copy query**. The clipboard holds
+   `caller_id=<sys_id>^category=application^...`: every internal field name and value.
+4. Put each `name=value` pair under `fields:` in `application.yml` (already filled in for HCA EDW Application Support).
+5. For auto-resolve: filter the list on Resolution code is <your usual code>, Copy query, and put the
+   `close_code` value in `resolve.fields.close_code`.
+
+### Running it
+
+```
+INCIDENTS_ENABLED=true
+SERVICENOW_URL=https://<instance>.service-now.com
+INCIDENTS_MODE=BROWSER            # once DRY_RUN links look right
+```
+
+The first BROWSER run opens Edge with its own profile (`data/servicenow-browser-profile`). Sign in when asked
+(`SERVICENOW_LOGIN_REQUIRED`). The sign-in is kept for later runs until your SSO session expires.
+BROWSER mode stays in DRY_RUN while any `<...>` placeholder remains in `fields`.
+
+Uses Playwright with the installed Edge (`browser.channel: msedge`), so no browser download is needed.
 
 ## Pipelines: linking workflows to state machines
 

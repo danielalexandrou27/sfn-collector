@@ -58,6 +58,24 @@ CREATE TABLE IF NOT EXISTS run_failure_detail (
     analysed_at     TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
+-- ServiceNow incident raised per failed run (prefilled link + browser submit). Dedup key = run_id.
+DROP TABLE IF EXISTS incident_request;   -- replaced by sn_incident (email approach dropped)
+CREATE TABLE IF NOT EXISTS sn_incident (
+    run_id            VARCHAR(512)  PRIMARY KEY,
+    job_id            VARCHAR(512)  NOT NULL,
+    job_name          VARCHAR(256),
+    status            VARCHAR(16)   NOT NULL,   -- DRY_RUN | CREATED | FAILED | DUPLICATE
+    incident_number   VARCHAR(40),              -- INC0012345
+    incident_sys_id   VARCHAR(32),
+    link              VARCHAR(8000),            -- the prefilled new-incident link
+    error             VARCHAR(2000),
+    attempts          INT           NOT NULL,
+    resolve_attempts  INT           NOT NULL DEFAULT 0,
+    resolved_at       TIMESTAMP WITH TIME ZONE,
+    created_at        TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_sn_incident_job ON sn_incident (job_id, status);
+
 -- How each downstream run relates to its upstream runs (one row per configured edge).
 CREATE TABLE IF NOT EXISTS run_link (
     pipeline           VARCHAR(256) NOT NULL,

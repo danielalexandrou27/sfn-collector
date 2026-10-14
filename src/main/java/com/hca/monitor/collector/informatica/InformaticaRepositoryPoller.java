@@ -156,8 +156,7 @@ public class InformaticaRepositoryPoller implements DisposableBean {
                 boolean changed = o == RunStatusRepository.Outcome.INSERTED || o == RunStatusRepository.Outcome.UPDATED;
                 if (!changed) continue;
 
-                log.info("{} {} run {} -> {}{}", o, r.jobId(), r.runName(), r.status(),
-                        r.errorCode() != null ? " (" + r.errorCode() + ": " + firstLine(r.errorCause()) + ")" : "");
+                log.info(describe(r));
 
                 if (DRILL_DOWN.contains(r.status())) {
                     drillDown(conn, row, r, observedAt);
@@ -247,6 +246,39 @@ public class InformaticaRepositoryPoller implements DisposableBean {
                     t.targSuccessRows() != null
                             ? " (target rows ok=" + t.targSuccessRows() + ", rejected=" + t.targFailedRows() + ")" : "");
         });
+    }
+
+    private static final java.time.format.DateTimeFormatter TIME =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /**
+     * One line per workflow run, in the Informatica server's local time, e.g.
+     * "Informatica wf_LOANS_EXTRACT [LOANS] run 12345: SUCCEEDED | started 2026-10-13 02:00:05 | ended 02:31:40 (31m 35s)"
+     */
+    String describe(RunStatus r) {
+        int slash = r.jobId().indexOf('/');
+        StringBuilder s = new StringBuilder("Informatica ").append(r.jobName());
+        if (slash > 0) s.append(" [").append(r.jobId(), 0, slash).append("]");
+        s.append(" run ").append(r.runName()).append(": ").append(r.status());
+        String started = r.startedAt() == null ? null : TIME.format(r.startedAt().atZone(serverZone));
+        if (started != null) {
+            s.append(" | started ").append(started);
+        }
+        if (r.stoppedAt() != null) {
+            String ended = TIME.format(r.stoppedAt().atZone(serverZone));
+            // Same day as the start: show only the time.
+            s.append(" | ended ").append(started != null && ended.startsWith(started.substring(0, 10))
+                    ? ended.substring(11) : ended);
+            if (r.startedAt() != null) {
+                java.time.Duration d = java.time.Duration.between(r.startedAt(), r.stoppedAt());
+                s.append(" (").append(d.toHours() > 0 ? d.toHours() + "h " : "")
+                 .append(d.toMinutesPart()).append("m ").append(d.toSecondsPart()).append("s)");
+            }
+        }
+        if (r.errorCode() != null) {
+            s.append(" | error ").append(r.errorCode()).append(": ").append(firstLine(r.errorCause()));
+        }
+        return s.toString();
     }
 
     private Instant toInstant(LocalDateTime t) {
