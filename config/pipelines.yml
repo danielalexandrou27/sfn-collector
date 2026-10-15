@@ -1,0 +1,285 @@
+# Pipeline registry: which Informatica workflow triggers which Step Function.
+# One pipeline per Informatica folder; each workflow is listed once, followed by the step function(s) it feeds.
+# The engine reloads this file within 30 s of saving. Names must match Informatica and AWS exactly (case too).
+# Optional per step function: expected_by: "HH:mm" (Pacific) -> dashboard shows Late if not started by then.
+# 43 step functions, 39 workflows, 11 folders.
+
+pipelines:
+
+  - name: ADW_HCA_BLAZE_SCORECARD
+    nodes:
+      - id: wf_datapipeline_glue_stepfunc_full
+        informatica: { folder: ADW_HCA_BLAZE_SCORECARD, workflow: wf_datapipeline_glue_stepfunc_full }
+      - id: prod-adw_glue_and_data_pipeline_jobs_report
+        step_function: prod-adw_glue_and_data_pipeline_jobs_report
+        depends_on: [wf_datapipeline_glue_stepfunc_full]
+
+      - id: wf_Load_blaze_orig_scorecard_to_ADW
+        informatica: { folder: ADW_HCA_BLAZE_SCORECARD, workflow: wf_Load_blaze_orig_scorecard_to_ADW }
+      - id: prod-blaze_orig_scorecard_daily
+        step_function: prod-blaze_orig_scorecard_daily
+        depends_on: [wf_Load_blaze_orig_scorecard_to_ADW]
+
+      - id: wf_Load_Blz_Collections_Incr
+        informatica: { folder: ADW_HCA_BLAZE_SCORECARD, workflow: wf_Load_Blz_Collections_Incr }
+      - id: prod-blaze_collections_daily
+        step_function: prod-blaze_collections_daily
+        depends_on: [wf_Load_Blz_Collections_Incr]
+
+      - id: wf_Load_Deep_Daily_Incr
+        informatica: { folder: ADW_HCA_BLAZE_SCORECARD, workflow: wf_Load_Deep_Daily_Incr }
+      - id: prod-blaze_deep_daily_incr
+        step_function: prod-blaze_deep_daily_incr
+        depends_on: [wf_Load_Deep_Daily_Incr]
+
+
+  - name: ADW_KSIOP
+    nodes:
+      - id: wf_ACCT_FACT
+        informatica: { folder: ADW_KSIOP, workflow: wf_ACCT_FACT }
+      - id: prod-Acct_Fact
+        step_function: prod-Acct_Fact
+        depends_on: [wf_ACCT_FACT]
+
+      - id: wf_Active_lld
+        informatica: { folder: ADW_KSIOP, workflow: wf_Active_lld }
+      - id: prod-dlr_active_lld_daily
+        step_function: prod-dlr_active_lld_daily
+        depends_on: [wf_Active_lld]
+
+      - id: wf_ksiop_openlending
+        informatica: { folder: ADW_KSIOP, workflow: wf_ksiop_openlending }
+      - id: ksiop_openlending
+        step_function: ksiop_openlending
+        depends_on: [wf_ksiop_openlending]
+
+      - id: wf_POOL
+        informatica: { folder: ADW_KSIOP, workflow: wf_POOL }
+      - id: prod-ksiopcommon
+        step_function: prod-ksiopcommon
+        depends_on: [wf_POOL]
+
+
+  - name: ADW_MISC
+    nodes:
+      - id: wf_ActiveDirectory
+        informatica: { folder: ADW_MISC, workflow: wf_ActiveDirectory }
+      - id: active_user_crawler_trigger
+        step_function: active_user_crawler_trigger
+        depends_on: [wf_ActiveDirectory]
+
+      - id: wf_chatbot_file_convertion
+        informatica: { folder: ADW_MISC, workflow: wf_chatbot_file_convertion }
+      - id: chatbot_crawler_trigger
+        step_function: chabot_crawler_trigger
+        depends_on: [wf_chatbot_file_convertion]
+
+      - id: wf_chrome_dups
+        informatica: { folder: ADW_MISC, workflow: wf_chrome_dups }
+      - id: chrome_crawler_trigger
+        step_function: chrome_crawler_trigger
+        depends_on: [wf_chrome_dups]
+
+      - id: wf_merp_daily_balances
+        informatica: { folder: ADW_MISC, workflow: wf_merp_daily_balances }
+      - id: prod-merp_retail_lease_balance
+        step_function: prod-merp_retail_lease_balance
+        depends_on: [wf_merp_daily_balances]
+
+      - id: wf_RDN
+        informatica: { folder: ADW_MISC, workflow: wf_RDN }
+      - id: rdn_crawler_trigger
+        step_function: rdn_crawler_trigger
+        depends_on: [wf_RDN]
+
+      - id: wf_sms_inbound
+        informatica: { folder: ADW_MISC, workflow: wf_sms_inbound }
+      - id: sms_crawler_trigger
+        step_function: sms_crawler_trigger
+        depends_on: [wf_sms_inbound]
+
+
+  - name: ADW_NGS_DAYEND
+    nodes:
+      - id: wf_ADW_NGS_STABILIZATION_DYEND
+        informatica: { folder: ADW_NGS_DAYEND, workflow: wf_ADW_NGS_STABILIZATION_DYEND }
+      - id: prod-ngs_stabilization
+        step_function: prod-ngs_stabilization
+        depends_on: [wf_ADW_NGS_STABILIZATION_DYEND]
+      - id: prod-ngs_stabilization_account_balances
+        step_function: prod-ngs_stabilization_account_balances
+        depends_on: [wf_ADW_NGS_STABILIZATION_DYEND]
+
+
+  - name: ADW_WEBDATA
+    nodes:
+      - id: wf_WEBDATA
+        informatica: { folder: ADW_WEBDATA, workflow: wf_WEBDATA }
+      - id: prod-web_data
+        step_function: prod-web_data
+        depends_on: [wf_WEBDATA]
+
+
+  - name: HCA_CRM_SKIP
+    nodes:
+      - id: wf_m_HCA_SKIP_ADW_CRM_INTERNAL_SCRUB_PHONE_STG
+        informatica: { folder: HCA_CRM_SKIP, workflow: wf_m_HCA_SKIP_ADW_CRM_INTERNAL_SCRUB_PHONE_STG }
+      - id: strap_skip_in_crawler_trigger
+        step_function: strap_skip_in_crawler_trigger
+        depends_on: [wf_m_HCA_SKIP_ADW_CRM_INTERNAL_SCRUB_PHONE_STG]
+      - id: strap_skip_out_crawler_trigger
+        step_function: strap_skip_out_crawler_trigger
+        depends_on: [wf_m_HCA_SKIP_ADW_CRM_INTERNAL_SCRUB_PHONE_STG]
+
+      - id: wf_m_HCA_SKIP_EXTERNAL_SCRUBBING_STAGING_LOAD_AUTO
+        informatica: { folder: HCA_CRM_SKIP, workflow: wf_m_HCA_SKIP_EXTERNAL_SCRUBBING_STAGING_LOAD_AUTO }
+      - id: strap_scrub_in_external_stage_load
+        step_function: strap_scrub_in_external_stage_load
+        depends_on: [wf_m_HCA_SKIP_EXTERNAL_SCRUBBING_STAGING_LOAD_AUTO]
+      - id: strap_scrub_out_external_stage_load
+        step_function: strap_scrub_out_external_stage_load
+        depends_on: [wf_m_HCA_SKIP_EXTERNAL_SCRUBBING_STAGING_LOAD_AUTO]
+
+
+  - name: HCA_DATALAKE
+    nodes:
+      - id: wf_adw_alv_dialer_dataextract
+        informatica: { folder: HCA_DATALAKE, workflow: wf_adw_alv_dialer_dataextract }
+      - id: prod_dialer_crawler_trigger
+        step_function: prod_dialer_crawler_trigger
+        depends_on: [wf_adw_alv_dialer_dataextract]
+
+      - id: wf_adw_collections_ksiop_dataextract
+        informatica: { folder: HCA_DATALAKE, workflow: wf_adw_collections_ksiop_dataextract }
+      - id: prod-collections_ksiop_crawler_trg
+        step_function: prod-collections_ksiop_crawler_trg
+        depends_on: [wf_adw_collections_ksiop_dataextract]
+
+      - id: wf_adw_crowe_dataextract
+        informatica: { folder: HCA_DATALAKE, workflow: wf_adw_crowe_dataextract }
+      - id: commercial_finance_crawler_trigger
+        step_function: commercial_finance_crawler_trigger
+        depends_on: [wf_adw_crowe_dataextract]
+
+      - id: wf_adw_dbk_dataextract
+        informatica: { folder: HCA_DATALAKE, workflow: wf_adw_dbk_dataextract }
+      - id: prod_dbk_crawler_trigger
+        step_function: prod_dbk_crawler_trigger
+        depends_on: [wf_adw_dbk_dataextract]
+
+      - id: wf_collections_case_dtl_elements_list_ph2
+        informatica: { folder: HCA_DATALAKE, workflow: wf_collections_case_dtl_elements_list_ph2 }
+      - id: prod-collections_ph2_elements_list_crawler_trg
+        step_function: prod-collections_ph2_elements_list_crawler_trg
+        depends_on: [wf_collections_case_dtl_elements_list_ph2]
+
+      - id: wf_collections_case_dtl_repo_ph2
+        informatica: { folder: HCA_DATALAKE, workflow: wf_collections_case_dtl_repo_ph2 }
+      - id: prod-collections_ph2_ksiop_repo_crawler_trg
+        step_function: prod-collections_ph2_ksiop_repo_crawler_trg
+        depends_on: [wf_collections_case_dtl_repo_ph2]
+
+      - id: wf_collections_ksiop_bankrupcty
+        informatica: { folder: HCA_DATALAKE, workflow: wf_collections_ksiop_bankrupcty }
+      - id: prod-collections_ksiop_bankruptcy_crawler_trg
+        step_function: prod-collections_ksiop_bankruptcy_crawler_trg
+        depends_on: [wf_collections_ksiop_bankrupcty]
+
+      - id: wf_collections_ksiop_recovery
+        informatica: { folder: HCA_DATALAKE, workflow: wf_collections_ksiop_recovery }
+      - id: prod-collections_ksiop_recovery_crawler_trg
+        step_function: prod-collections_ksiop_recovery_crawler_trg
+        depends_on: [wf_collections_ksiop_recovery]
+
+      - id: wf_collections_phase2
+        informatica: { folder: HCA_DATALAKE, workflow: wf_collections_phase2 }
+      - id: prod-collections_ph2_ksiop_crawler_trg
+        step_function: prod-collections_ph2_ksiop_crawler_trg
+        depends_on: [wf_collections_phase2]
+
+      - id: wf_HCA_SPCH_ANLYTCS
+        informatica: { folder: HCA_DATALAKE, workflow: wf_HCA_SPCH_ANLYTCS }
+      - id: prod_speech_analytics_crawler_trigger
+        step_function: prod_speech_analytics_crawler_trigger
+        depends_on: [wf_HCA_SPCH_ANLYTCS]
+      - id: Speech_analytics2_crawler_trigger
+        step_function: Speech_analytics2_crawler_trigger
+        depends_on: [wf_HCA_SPCH_ANLYTCS]
+
+      - id: wf_s_m_C360_KSIOP_STG
+        informatica: { folder: HCA_DATALAKE, workflow: wf_s_m_C360_KSIOP_STG }
+      - id: prod-sf_ksiop_dayend_crawler_trg1
+        step_function: prod-sf_ksiop_dayend_crawler_trg1
+        depends_on: [wf_s_m_C360_KSIOP_STG]
+
+      - id: wf_s_m_ksiop_case_general_info
+        informatica: { folder: HCA_DATALAKE, workflow: wf_s_m_ksiop_case_general_info }
+      - id: prod-sf_ksiop_dayend_crawler_trg
+        step_function: prod-sf_ksiop_dayend_crawler_trg
+        depends_on: [wf_s_m_ksiop_case_general_info]
+
+
+  - name: HCA_EDW_DAYBREAK
+    nodes:
+      - id: wf_aan_preorder_program
+        informatica: { folder: HCA_EDW_DAYBREAK, workflow: wf_aan_preorder_program }
+      - id: prod_dbkpreorder_crawler_trigger
+        step_function: prod_dbkpreorder_crawler_trigger
+        depends_on: [wf_aan_preorder_program]
+
+      - id: wf_ALT_DATA
+        informatica: { folder: HCA_EDW_DAYBREAK, workflow: wf_ALT_DATA }
+      - id: prod_dbkalt_crawler_trigger
+        step_function: prod_dbkalt_crawler_trigger
+        depends_on: [wf_ALT_DATA]
+
+      - id: wf_APPLICATION
+        informatica: { folder: HCA_EDW_DAYBREAK, workflow: wf_APPLICATION }
+      - id: prod-Application
+        step_function: prod-Application
+        depends_on: [wf_APPLICATION]
+
+
+  - name: HCA_IVR
+    nodes:
+      - id: wf_cisco_data_Extract
+        informatica: { folder: HCA_IVR, workflow: wf_cisco_data_Extract }
+      - id: prod-telephony_crawler_trigger
+        step_function: prod-telephony_crawler_trigger
+        depends_on: [wf_cisco_data_Extract]
+
+      - id: wf_ivr_reporting_data_extract
+        informatica: { folder: HCA_IVR, workflow: wf_ivr_reporting_data_extract }
+      - id: prod-ivr_crawler_trigger
+        step_function: prod-ivr_crawler_trigger
+        depends_on: [wf_ivr_reporting_data_extract]
+
+
+  - name: HCA_OEM_BILLING
+    nodes:
+      - id: wf_OEM_BILL_LEASE_RV_DETAILS
+        informatica: { folder: HCA_OEM_BILLING, workflow: wf_OEM_BILL_LEASE_RV_DETAILS }
+      - id: prod_oem_bill_lease_rv_crawler_trigger
+        step_function: prod_oem_bill_lease_rv_crawler_trigger
+        depends_on: [wf_OEM_BILL_LEASE_RV_DETAILS]
+
+      - id: wf_OEM_RESIDUAL_ADJ_DETAILS
+        informatica: { folder: HCA_OEM_BILLING, workflow: wf_OEM_RESIDUAL_ADJ_DETAILS }
+      - id: prod_oem_residual_adj_crawler_trigger
+        step_function: prod_oem_residual_adj_crawler_trigger
+        depends_on: [wf_OEM_RESIDUAL_ADJ_DETAILS]
+
+
+  - name: HCA_VAL
+    nodes:
+      - id: wf_adw_RECOVERY_PAYMENTS_DAILY_dataextract
+        informatica: { folder: HCA_VAL, workflow: wf_adw_RECOVERY_PAYMENTS_DAILY_dataextract }
+      - id: prod-sf_co_recovery_daily
+        step_function: prod-sf_co_recovery_daily
+        depends_on: [wf_adw_RECOVERY_PAYMENTS_DAILY_dataextract]
+
+      - id: wf_s_m_dm_dvf_org_suspense
+        informatica: { folder: HCA_VAL, workflow: wf_s_m_dm_dvf_org_suspense }
+      - id: prod-sf_suspense_new_dly_snpsht
+        step_function: prod-sf_suspense_new_dly_snpsht
+        depends_on: [wf_s_m_dm_dvf_org_suspense]
