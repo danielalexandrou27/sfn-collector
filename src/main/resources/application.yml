@@ -84,6 +84,28 @@ monitor:
     link-window-hours: 36      # how far back to look for an upstream run
     pending-grace-minutes: 3   # wait before alerting on a non-OK link (Informatica polls every 60 s)
 
+  # Desktop pop-ups and WhatsApp messages. WHICH jobs notify WHOM, and the message text, are in
+  # config/notifications.yml (copy config/notifications.example.yml). Provider keys go in config/local.yml.
+  notify:
+    rules-file: ${NOTIFICATIONS_FILE:./config/notifications.yml}
+    desktop-enabled: ${DESKTOP_NOTIFICATIONS:true}   # Windows pop-ups; switches itself off on a server
+    dashboard-url: ${DASHBOARD_URL:http://localhost:5173}
+    aws-region: ${AWS_REGION:us-west-2}
+    time-zone: America/Los_Angeles
+    failure-detail-wait-seconds: 90       # Step Functions: wait up to this long for the failed step + error
+    whatsapp:
+      provider: ${WHATSAPP_PROVIDER:WAHA}          # WAHA (self-hosted gateway) | CALLMEBOT | TWILIO | META
+      waha-url: ${WAHA_URL:http://localhost:3000}
+      waha-api-key: ${WAHA_API_KEY:}                # same value as WAHA_API_KEY in deploy/waha/.env
+      waha-session: ${WAHA_SESSION:default}
+      proxy: ${WHATSAPP_PROXY:}                     # "host:port" if the company network needs a proxy (not for WAHA)
+      twilio-account-sid: ${TWILIO_ACCOUNT_SID:}
+      twilio-auth-token: ${TWILIO_AUTH_TOKEN:}
+      twilio-from: ${TWILIO_WHATSAPP_FROM:}
+      meta-phone-number-id: ${META_WA_PHONE_NUMBER_ID:}
+      meta-access-token: ${META_WA_ACCESS_TOKEN:}
+      meta-api-version: v21.0
+
   # Read-only API for the pipeline-dashboard web page (separate project). One shared sign-in.
   dashboard:
     username: ${DASHBOARD_USER:pipeline}
@@ -102,6 +124,10 @@ server:
         secure: ${DASHBOARD_HTTPS:false}     # true once served over https
 
 spring:
+  config:
+    # Your own settings and passwords, kept out of git. Copy config/local.example.yml to config/local.yml.
+    # Anything set there overrides this file (and needs no environment variables or admin rights).
+    import: optional:file:./config/local.yml
   mvc:
     async:
       request-timeout: 35m                   # live-update streams; the page reconnects after this

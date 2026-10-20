@@ -230,23 +230,48 @@ public class ServiceNowBrowser implements AutoCloseable {
     }
 
     private Page page() throws IncidentException {
-        try {
-            if (context == null) {
-                playwright = Playwright.create();
-                BrowserType.LaunchPersistentContextOptions o = new BrowserType.LaunchPersistentContextOptions()
-                        .setHeadless(cfg.headless());
-                if (cfg.channel() != null && !cfg.channel().isBlank() && !"chromium".equals(cfg.channel())) {
-                    o.setChannel(cfg.channel());
+        if (context == null) {
+            playwright = Playwright.create();
+            // Try the configured browser first, then the others. Edge on locked-down laptops can exit as soon as
+            // it starts (profile path or policy); the absolute profile path fixes the first cause.
+            List<String> channels = new ArrayList<>();
+            String preferred = cfg.channel() == null || cfg.channel().isBlank() ? "msedge" : cfg.channel();
+            channels.add(preferred);
+            for (String c : List.of("msedge", "chrome", "chromium")) if (!channels.contains(c)) channels.add(c);
+
+            List<String> problems = new ArrayList<>();
+            for (String channel : channels) {
+                Path profile = Path.of(cfg.profileDir()).toAbsolutePath().resolve(channel);
+                BrowserContext started = null;
+                try {
+                    Files.createDirectories(profile);
+                    BrowserType.LaunchPersistentContextOptions o = new BrowserType.LaunchPersistentContextOptions()
+                            .setHeadless(cfg.headless());
+                    if (!"chromium".equals(channel)) o.setChannel(channel);
+                    started = playwright.chromium().launchPersistentContext(profile, o);
+                    started.newPage().close();                 // fails here if the browser shut itself down
+                    started.setDefaultTimeout(cfg.timeoutSeconds() * 1000.0);
+                    context = started;
+                    if (!channel.equals(preferred)) {
+                        log.warn("ServiceNow browser: {} would not start, using {} instead", preferred, channel);
+                    } else {
+                        log.info("ServiceNow browser started ({}, {})", channel, cfg.headless() ? "headless" : "visible window");
+                    }
+                    break;
+                } catch (Exception e) {
+                    problems.add(channel + ": " + String.valueOf(e.getMessage()).lines().findFirst().orElse(""));
+                    if (started != null) { try { started.close(); } catch (Exception ignored) { } }
                 }
-                Files.createDirectories(Path.of(cfg.profileDir()));
-                context = playwright.chromium().launchPersistentContext(Path.of(cfg.profileDir()), o);
-                context.setDefaultTimeout(cfg.timeoutSeconds() * 1000.0);
             }
-            return context.pages().isEmpty() ? context.newPage() : context.pages().get(0);
-        } catch (Exception e) {
-            close();
-            throw new IncidentException("Could not start the browser (" + cfg.channel() + "): " + e.getMessage(), null);
+            if (context == null) {
+                close();
+                throw new IncidentException("SERVICENOW_BROWSER_BLOCKED: no browser would start (" + String.join("; ", problems)
+                        + "). Company policy is probably blocking automated browsers on this machine - check edge://policy "
+                        + "for DeveloperToolsAvailability / RemoteDebuggingAllowed. Use INCIDENTS_MODE=DRY_RUN here "
+                        + "(links in the outbox) or run the engine where automation is allowed", null);
+            }
         }
+        return context.pages().isEmpty() ? context.newPage() : context.pages().get(0);
     }
 
     private String screenshot(Page page, String what) {

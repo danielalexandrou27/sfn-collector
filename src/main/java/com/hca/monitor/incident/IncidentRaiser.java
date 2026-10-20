@@ -76,6 +76,11 @@ public class IncidentRaiser implements DisposableBean {
             browser = new ServiceNowBrowser(props.browser(), props.instanceUrl());
         }
         log.info("ServiceNow incidents enabled: mode {}, statuses {}, auto-resolve {}", mode, props.statuses(), resolveEnabled);
+        if (mode == IncidentProperties.Mode.DRY_RUN) {
+            log.warn("ServiceNow incidents are in DRY_RUN: nothing is submitted. Each failure's prefilled ticket link is "
+                    + "logged (INCIDENT_DRY_RUN) and saved in {}. Set monitor.incidents.mode: BROWSER to submit them.",
+                    props.outboxDir());
+        }
     }
 
     @EventListener(ApplicationReadyEvent.class)

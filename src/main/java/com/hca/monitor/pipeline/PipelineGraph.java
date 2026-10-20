@@ -48,21 +48,32 @@ public final class PipelineGraph {
         return new PipelineGraph(0);
     }
 
-    /** Builds and validates the graph; throws IllegalArgumentException listing every problem found. */
+    /**
+     * Builds and validates the graph; throws IllegalArgumentException listing every problem found.
+     *
+     * A depends_on entry can name, in this order of preference:
+     *   1. a node id in the same pipeline                       depends_on: [loans_extract]
+     *   2. a node in another pipeline as "pipeline/node_id"     depends_on: [HCA_EDW_DAYBREAK/prod-Application]
+     *   3. a node id or step function name used anywhere else   depends_on: [prod-Application]
+     *      in the file, as long as it identifies exactly one node.
+     * So a step function can wait on another step function (or workflow) registered under any pipeline.
+     */
     public static PipelineGraph build(PipelineConfig.File file) {
         List<String> errors = new ArrayList<>();
         List<PipelineConfig.Pipeline> pipelines = file == null || file.pipelines() == null ? List.of() : file.pipelines();
         PipelineGraph g = new PipelineGraph(pipelines.size());
         Set<String> pipelineNames = new HashSet<>();
 
+        // Pass 1: every node in every pipeline.
+        Map<String, Map<String, NodeRef>> refsByPipeline = new LinkedHashMap<>();
+        Map<String, List<NodeRef>> byBareName = new HashMap<>();     // node id or step function name -> nodes
         for (PipelineConfig.Pipeline p : pipelines) {
             String pName = p.name();
             if (pName == null || pName.isBlank()) { errors.add("A pipeline has no name"); continue; }
-            if (!pipelineNames.add(pName)) errors.add("Duplicate pipeline name: " + pName);
-            List<PipelineConfig.Node> nodes = p.nodes() == null ? List.of() : p.nodes();
-
+            if (!pipelineNames.add(pName)) { errors.add("Duplicate pipeline name: " + pName); continue; }
             Map<String, NodeRef> refs = new LinkedHashMap<>();
-            for (PipelineConfig.Node n : nodes) {
+            refsByPipeline.put(pName, refs);
+            for (PipelineConfig.Node n : p.nodes() == null ? List.<PipelineConfig.Node>of() : p.nodes()) {
                 String where = pName + "/" + n.id();
                 if (n.id() == null || n.id().isBlank()) { errors.add(pName + ": a node has no id"); continue; }
                 if (refs.containsKey(n.id())) { errors.add(where + ": duplicate node id"); continue; }
@@ -86,6 +97,10 @@ public final class PipelineGraph {
                     ref = new NodeRef(pName, n.id(), SFN, sm);
                 }
                 refs.put(n.id(), ref);
+                byBareName.computeIfAbsent(n.id(), k -> new ArrayList<>()).add(ref);
+                if (SFN.equals(ref.source()) && !ref.matchValue().equals(n.id())) {
+                    byBareName.computeIfAbsent(ref.matchValue(), k -> new ArrayList<>()).add(ref);
+                }
                 if (n.expectedBy() != null && !n.expectedBy().isBlank()) {
                     try {
                         g.expectedBy.put(ref, java.time.LocalTime.parse(n.expectedBy().trim()));
@@ -94,29 +109,43 @@ public final class PipelineGraph {
                     }
                 }
             }
+        }
 
-            Map<String, List<String>> deps = new HashMap<>();
-            for (PipelineConfig.Node n : nodes) {
+        // Pass 2: dependencies, which may point into other pipelines.
+        Map<String, List<String>> deps = new HashMap<>();             // "pipeline/id" -> upstream "pipeline/id"s
+        for (PipelineConfig.Pipeline p : pipelines) {
+            Map<String, NodeRef> refs = refsByPipeline.get(p.name());
+            if (refs == null || p.nodes() == null) continue;
+            for (PipelineConfig.Node n : p.nodes()) {
                 NodeRef down = refs.get(n.id());
                 if (down == null || n.dependsOn() == null) continue;
+                String where = p.name() + "/" + n.id();
                 Duration lag = n.maxStartLagMinutes() == null ? null : Duration.ofMinutes(n.maxStartLagMinutes());
-                for (String upId : n.dependsOn()) {
-                    NodeRef up = refs.get(upId);
-                    if (up == null) { errors.add(pName + "/" + n.id() + ": depends_on unknown node '" + upId + "'"); continue; }
-                    if (up.equals(down)) { errors.add(pName + "/" + n.id() + ": depends on itself"); continue; }
-                    deps.computeIfAbsent(n.id(), k -> new ArrayList<>()).add(upId);
+                Set<NodeRef> seenUp = new HashSet<>();
+                for (String raw : n.dependsOn()) {
+                    String upName = raw == null ? "" : raw.trim();
+                    NodeRef up = resolve(upName, refs, refsByPipeline, byBareName, where, errors);
+                    if (up == null) continue;
+                    if (up.equals(down)) { errors.add(where + ": depends on itself"); continue; }
+                    if (!seenUp.add(up)) continue;                     // listed twice: ignore the repeat
+                    deps.computeIfAbsent(id(down), k -> new ArrayList<>()).add(id(up));
                     Edge e = new Edge(up, down, lag);
                     g.edges.add(e);
                     g.upstreamEdges.computeIfAbsent(down, k -> new ArrayList<>()).add(e);
                     g.downstreamEdges.computeIfAbsent(up, k -> new ArrayList<>()).add(e);
                 }
             }
-            String cycle = findCycle(refs.keySet(), deps);
-            if (cycle != null) errors.add(pName + ": dependency cycle " + cycle);
+        }
 
+        Set<String> allIds = new LinkedHashSet<>();
+        refsByPipeline.values().forEach(m -> m.values().forEach(r -> allIds.add(id(r))));
+        String cycle = findCycle(allIds, deps);
+        if (cycle != null) errors.add("dependency cycle " + cycle);
+
+        for (Map<String, NodeRef> refs : refsByPipeline.values()) {
             for (NodeRef r : refs.values()) {
                 g.byJobKey.computeIfAbsent(r.key(), k -> new ArrayList<>()).add(r);
-                g.byId.put(pName + "/" + r.nodeId(), r);
+                g.byId.put(id(r), r);
                 g.nodes.add(r);
             }
         }
@@ -126,6 +155,38 @@ public final class PipelineGraph {
                     + String.join("\n  - ", errors));
         }
         return g;
+    }
+
+    private static String id(NodeRef r) {
+        return r.pipeline() + "/" + r.nodeId();
+    }
+
+    /** Finds the node a depends_on entry names (see build); adds an error and returns null if it can't. */
+    private static NodeRef resolve(String name, Map<String, NodeRef> samePipeline,
+                                   Map<String, Map<String, NodeRef>> refsByPipeline,
+                                   Map<String, List<NodeRef>> byBareName, String where, List<String> errors) {
+        if (name.isEmpty()) { errors.add(where + ": depends_on has an empty entry"); return null; }
+        NodeRef local = samePipeline.get(name);
+        if (local != null) return local;
+
+        int slash = name.indexOf('/');
+        if (slash > 0) {
+            Map<String, NodeRef> other = refsByPipeline.get(name.substring(0, slash));
+            NodeRef r = other == null ? null : other.get(name.substring(slash + 1));
+            if (r != null) return r;
+        }
+
+        List<NodeRef> matches = byBareName.getOrDefault(name, List.of()).stream().distinct().toList();
+        if (matches.size() == 1) return matches.get(0);
+        if (matches.isEmpty()) {
+            errors.add(where + ": depends_on '" + name + "' doesn't match any node id or step function in pipelines.yml"
+                    + " (add the upstream as its own node first)");
+        } else {
+            errors.add(where + ": depends_on '" + name + "' matches more than one node ("
+                    + String.join(", ", matches.stream().map(PipelineGraph::id).toList())
+                    + "); write it as pipeline/node_id");
+        }
+        return null;
     }
 
     private static String findCycle(Set<String> ids, Map<String, List<String>> deps) {

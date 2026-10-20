@@ -239,9 +239,103 @@ Pacific time) to its node in `pipelines.yml`:
 ```yaml
       - id: load
         step_function: hca-loans-load
-        after: [extract, dims]
+        depends_on: [extract, dims]
         expected_by: "04:30"
 ```
 
 Every call except login needs a signed-in session. The engine only reads its own database for these;
 nothing on the dashboard can change a run, an incident or the registry.
+
+## Settings and passwords without admin rights
+
+Copy `config/local.example.yml` to `config/local.yml` (next to `pipelines.yml`) and fill in your values.
+The engine reads it at startup and it overrides `application.yml`. It's git-ignored, so passwords stay
+on your machine. Environment variables still work and take priority, for example on the EC2 server.
+Run the engine with its working directory set to the project folder so it finds `./config/`.
+
+## Step function → step function dependencies
+
+`depends_on` can name another step function as well as a workflow, including one registered under a
+different pipeline. Use its step function name (or node id); if that name appears in more than one pipeline,
+write `pipeline/node_id`. The upstream must be listed as a node somewhere in `pipelines.yml`.
+
+```yaml
+  - name: ADW_KSIOP
+    nodes:
+      - id: prod-ksiop_report
+        step_function: prod-ksiop_report
+        depends_on: [prod-Application]      # a step function registered under HCA_EDW_DAYBREAK
+```
+
+Upstream-failed and missing-trigger alerts, incident "downstream impact" text, and the dashboard all work
+the same for a step function upstream as for a workflow. On the dashboard the upstream column says which kind it is.
+
+## Desktop pop-ups and WhatsApp messages
+
+**Desktop (Windows):** while the engine runs, a "Pipeline monitor" icon sits in the system tray and every
+failure pops up a notification (job, failed step, error). Click it to open the AWS console execution or the
+dashboard. On a server with no desktop it switches itself off. Turn off with `monitor.notify.desktop-enabled: false`.
+If nothing appears, check Windows Settings → System → Notifications (and Focus / Do not disturb) for "Java".
+
+**WhatsApp:** copy `config/notifications.example.yml` to `config/notifications.yml` (git-ignored) and list
+the jobs, recipients and message text. Saved changes apply within 30 s; mistakes are reported in the log
+(`NOTIFICATIONS_INVALID`) and the previous version keeps working. Sent messages log as `WHATSAPP_SENT`,
+problems as `WHATSAPP_FAILED`.
+
+Providers (`monitor.notify.whatsapp.provider` in `config/local.yml`):
+
+| Provider | Good for | Setup |
+|---|---|---|
+| `WAHA` (default) | Posting to WhatsApp **groups** from your own dedicated number; self-hosted, no third party | See "WhatsApp gateway (WAHA)" below. |
+| `CALLMEBOT` (default) | Messages to yourself / a few teammates, free | Each person adds the CallMeBot number shown at https://www.callmebot.com/blog/free-api-whatsapp-messages/ to their contacts and sends it "I allow callmebot to send me messages" on WhatsApp; the reply contains their API key. Put phone + key under `recipients` in notifications.yml. |
+| `TWILIO` | Team use, reliable | Twilio account with WhatsApp sender (sandbox to test). Set `twilio-account-sid`, `twilio-auth-token`, `twilio-from` in local.yml. |
+| `META` | Company WhatsApp Business number | WhatsApp Business Cloud API: `meta-phone-number-id`, `meta-access-token` in local.yml. |
+
+Twilio and Meta deliver free-form text only to people who messaged the sender in the last 24 hours;
+otherwise they require pre-approved message templates. CallMeBot has no such window.
+
+Only runs that change after the engine starts are notified (a restart doesn't replay the day), and each run
+sends at most one started / succeeded / failed message. Step Functions failure messages wait up to 90 s for
+the failed step and real error.
+
+Messages leave the company network through a third-party service and can contain job names and error text:
+check with your manager / security before pointing this at production data.
+
+### WhatsApp gateway (WAHA)
+
+WAHA is an open-source WhatsApp HTTP API. It runs next to the engine (on the EC2) and acts as a linked
+device for a dedicated WhatsApp number, so the engine can post into your team's group chat.
+
+1. **Number:** use a dedicated number (a prepaid line/eSIM is best), install WhatsApp or WhatsApp Business
+   on a phone with it, turn on two-step verification, and have a group admin add it to the team group.
+2. **Start WAHA** on the EC2 (needs Docker):
+   ```
+   cd deploy/waha
+   cp .env.example .env        # set WAHA_API_KEY and the passwords to long random values
+   docker compose up -d
+   ```
+   It listens on `127.0.0.1:3000` only. To reach its dashboard from your laptop, use an SSH tunnel
+   (`ssh -L 3000:localhost:3000 ec2-user@<ec2-host>`) or Session Manager port forwarding, then open
+   http://localhost:3000/dashboard.
+3. **Link the number:** in the dashboard, start session `default`, wait for the QR code, and scan it on the
+   phone: WhatsApp → Settings → Linked devices → Link a device. Status becomes `WORKING`.
+4. **Point the engine at it** in `config/local.yml`:
+   ```yaml
+   monitor:
+     notify:
+       whatsapp:
+         provider: WAHA
+         waha-url: http://localhost:3000
+         waha-api-key: <the WAHA_API_KEY from deploy/waha/.env>
+   ```
+5. **Find the group id:** restart the engine; the log lists `Groups this number is in` with each
+   `chat_id`. Copy the team group's id into `config/notifications.yml` under `recipients`, e.g.
+   `team_group: { chat_id: "120363012345678901@g.us" }`, and put `team_group` in `default_to`.
+
+If the session drops (phone offline for ~2 weeks, logged out, WhatsApp update), the engine logs
+`WHATSAPP_GATEWAY_NOT_READY` at startup and `WHATSAPP_FAILED` per message: rescan the QR code in the dashboard.
+`deploy/waha/sessions/` holds the WhatsApp login: back it up with the server, never commit it.
+The EC2 needs outbound internet access to WhatsApp (web.whatsapp.com and related hosts).
+
+This is not Meta's official API. WhatsApp can ban numbers it detects being automated; keeping to one
+group of people who expect the messages, at low volume, keeps that risk low, and is why a dedicated number is used.

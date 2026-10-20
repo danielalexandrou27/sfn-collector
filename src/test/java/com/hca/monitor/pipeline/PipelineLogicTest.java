@@ -51,8 +51,63 @@ class PipelineLogicTest {
                 new PipelineConfig.Node("d", null, null, null, null, null)))));
         assertThatThrownBy(() -> PipelineGraph.build(bad))
                 .hasMessageContaining("cycle")
-                .hasMessageContaining("unknown node 'missing'")
+                .hasMessageContaining("depends_on 'missing' doesn't match any node")
                 .hasMessageContaining("exactly one of");
+    }
+
+    /** Folder-per-pipeline layout: a step function waits on a step function registered in another pipeline. */
+    static PipelineGraph crossPipelineGraph() {
+        return PipelineGraph.build(new PipelineConfig.File(List.of(
+                new PipelineConfig.Pipeline("HCA_EDW_DAYBREAK", List.of(
+                        infa("wf_APPLICATION", "HCA_EDW_DAYBREAK", "wf_APPLICATION"),
+                        sfn("prod-Application", "prod-Application", null, "wf_APPLICATION"))),
+                new PipelineConfig.Pipeline("ADW_KSIOP", List.of(
+                        infa("wf_POOL", "ADW_KSIOP", "wf_POOL"),
+                        sfn("prod-ksiopcommon", "prod-ksiopcommon", null, "wf_POOL"),
+                        // by bare step function name, by pipeline/id, and two upstreams of different kinds
+                        sfn("prod-ksiop_report", "prod-ksiop_report", 20, "prod-Application"),
+                        sfn("prod-ksiop_rollup", "prod-ksiop_rollup", null, "HCA_EDW_DAYBREAK/prod-Application", "prod-ksiopcommon"))))));
+    }
+
+    @Test
+    void stepFunctionCanDependOnStepFunctionInAnotherPipeline() {
+        PipelineGraph g = crossPipelineGraph();
+        var report = g.node("ADW_KSIOP", "prod-ksiop_report").orElseThrow();
+        assertThat(g.upstreamOf(report)).singleElement().satisfies(e -> {
+            assertThat(e.upstream().pipeline()).isEqualTo("HCA_EDW_DAYBREAK");
+            assertThat(e.upstream().source()).isEqualTo(PipelineGraph.SFN);
+            assertThat(e.upstream().matchValue()).isEqualTo("prod-Application");
+            assertThat(e.maxStartLag()).isEqualTo(Duration.ofMinutes(20));
+        });
+        var rollup = g.node("ADW_KSIOP", "prod-ksiop_rollup").orElseThrow();
+        assertThat(g.upstreamOf(rollup)).extracting(e -> e.upstream().matchValue())
+                .containsExactly("prod-Application", "prod-ksiopcommon");
+
+        // A failure in the workflow reaches everything downstream, across pipelines.
+        var wfApp = g.node("HCA_EDW_DAYBREAK", "wf_APPLICATION").orElseThrow();
+        assertThat(g.allDownstream(wfApp)).extracting(PipelineGraph.NodeRef::nodeId)
+                .containsExactlyInAnyOrder("prod-Application", "prod-ksiop_report", "prod-ksiop_rollup");
+
+        // The upstream step function's own runs are still matched to its single node.
+        RunStatus app = new RunStatus("STEP_FUNCTIONS", "arn:aws:states:us-west-2:1:stateMachine:prod-Application",
+                "prod-Application", "arn:y", "y", RunStatus.Status.SUCCEEDED, Instant.now(), Instant.now(), null, null, 0, null, Instant.now());
+        assertThat(g.nodesFor(app)).extracting(PipelineGraph.NodeRef::pipeline).containsExactly("HCA_EDW_DAYBREAK");
+    }
+
+    @Test
+    void crossPipelineNamesMustBeUnambiguousAndAcyclic() {
+        var ambiguous = new PipelineConfig.File(List.of(
+                new PipelineConfig.Pipeline("a", List.of(sfn("shared", "sm-a", null))),
+                new PipelineConfig.Pipeline("b", List.of(sfn("shared", "sm-b", null))),
+                new PipelineConfig.Pipeline("c", List.of(sfn("down", "sm-c", null, "shared")))));
+        assertThatThrownBy(() -> PipelineGraph.build(ambiguous))
+                .hasMessageContaining("matches more than one node (a/shared, b/shared)")
+                .hasMessageContaining("pipeline/node_id");
+
+        var loop = new PipelineConfig.File(List.of(
+                new PipelineConfig.Pipeline("a", List.of(sfn("x", "sm-x", null, "b/y"))),
+                new PipelineConfig.Pipeline("b", List.of(sfn("y", "sm-y", null, "sm-x")))));
+        assertThatThrownBy(() -> PipelineGraph.build(loop)).hasMessageContaining("dependency cycle");
     }
 
     @Test

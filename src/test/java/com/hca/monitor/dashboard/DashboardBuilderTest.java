@@ -102,4 +102,31 @@ class DashboardBuilderTest {
         assertThat(sf.durationSeconds()).isEqualTo(7 * 60L);
         assertThat(d.counts().failed()).isEqualTo(1);
     }
+
+    @Test
+    void stepFunctionUpstreamFromAnotherPipelineGetsItsOwnRow() {
+        var g = PipelineGraph.build(new PipelineConfig.File(List.of(
+                new PipelineConfig.Pipeline("HCA_EDW_DAYBREAK", List.of(
+                        new PipelineConfig.Node("prod-Application", null, "prod-Application", null, null, null))),
+                new PipelineConfig.Pipeline("ADW_KSIOP", List.of(
+                        new PipelineConfig.Node("prod-ksiop_report", null, "prod-ksiop_report",
+                                List.of("prod-Application"), null, "05:00"))))));
+        var runs = List.of(
+                sfn("prod-Application", "a1", "FAILED", at(2, 0), at(2, 10), "glue app_job: boom"));
+
+        var d = DashboardBuilder.build(g, runs, DAY, PT, at(6, 0), LINKS);
+
+        var row = d.rows().stream().filter(r -> r.stepFunction().name().equals("prod-ksiop_report")).findFirst().orElseThrow();
+        assertThat(row.pipeline()).isEqualTo("ADW_KSIOP");
+        assertThat(row.upstream().type()).isEqualTo("STEP_FUNCTIONS");
+        assertThat(row.upstream().name()).isEqualTo("prod-Application");
+        assertThat(row.upstream().folder()).isNull();
+        assertThat(row.upstream().status()).isEqualTo("FAILED");
+        assertThat(row.upstream().consoleUrl()).contains("prod-Application");
+        assertThat(row.stepFunction().status()).isEqualTo("LATE");            // waited on, past 05:00
+        // Both step functions are counted once each.
+        assertThat(d.counts().total()).isEqualTo(2);
+        assertThat(d.counts().failed()).isEqualTo(1);
+        assertThat(d.counts().late()).isEqualTo(1);
+    }
 }
